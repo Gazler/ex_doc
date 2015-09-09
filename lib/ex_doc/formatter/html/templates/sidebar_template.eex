@@ -1,11 +1,11 @@
 <div class="main">
 <section class="sidebar">
   <%= if url = config.homepage_url || config.source_url do %>
-    <h1 class="sidebar-projectName">
+    <h1 class="sidebar-projectName<%= if has_logo do %> logo<% end %>">
       <a href="<%= url %>"><%= config.project %></a>
     </h1>
   <% else %>
-    <h1 class="sidebar-projectName"><%= config.project %></h1>
+    <h1 class="sidebar-projectName<% if has_logo do %> logo<% end %>"><%= config.project %></h1>
   <% end %>
   <h2 class="sidebar-projectVersion">v<%= config.version %></h2>
 

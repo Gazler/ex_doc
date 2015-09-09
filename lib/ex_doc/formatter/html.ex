@@ -23,14 +23,15 @@ defmodule ExDoc.Formatter.HTML do
     exceptions = filter_list(:exceptions, all)
     protocols  = filter_list(:protocols, all)
 
-    has_readme = config.readme && generate_readme(output, module_nodes, config, modules, exceptions, protocols)
+    has_logo = config.logo && process_logo_metadata(config)
+    has_readme = config.readme && generate_readme(output, module_nodes, config, modules, exceptions, protocols, has_logo)
     generate_index(output, config)
-    generate_overview(modules, exceptions, protocols, output, config, has_readme)
-    generate_not_found(modules, exceptions, protocols, output, config, has_readme)
+    generate_overview(modules, exceptions, protocols, output, config, has_readme, has_logo)
+    generate_not_found(modules, exceptions, protocols, output, config, has_readme, has_logo)
     generate_sidebar_items(modules, exceptions, protocols, output)
-    generate_list(modules, all, output, config, has_readme)
-    generate_list(exceptions, all, output, config, has_readme)
-    generate_list(protocols, all, output, config, has_readme)
+    generate_list(modules, all, output, config, has_readme, has_logo)
+    generate_list(exceptions, all, output, config, has_readme, has_logo)
+    generate_list(protocols, all, output, config, has_readme, has_logo)
 
     Path.join(config.output, "index.html")
   end
@@ -49,13 +50,13 @@ defmodule ExDoc.Formatter.HTML do
     generate_redirect(output, "index.html", config, "#{config.main}.html")
   end
 
-  defp generate_overview(modules, exceptions, protocols, output, config, has_readme) do
-    content = Templates.overview_template(config, modules, exceptions, protocols, has_readme)
+  defp generate_overview(modules, exceptions, protocols, output, config, has_readme, has_logo) do
+    content = Templates.overview_template(config, modules, exceptions, protocols, has_readme, has_logo)
     :ok = File.write("#{output}/overview.html", content)
   end
 
-  defp generate_not_found(modules, exceptions, protocols, output, config, has_readme) do
-    content = Templates.not_found_template(config, modules, exceptions, protocols, has_readme)
+  defp generate_not_found(modules, exceptions, protocols, output, config, has_readme, has_logo) do
+    content = Templates.not_found_template(config, modules, exceptions, protocols, has_readme, has_logo)
     :ok = File.write("#{output}/404.html", content)
   end
 
@@ -82,19 +83,45 @@ defmodule ExDoc.Formatter.HTML do
     end
   end
 
-  defp generate_readme(output, module_nodes, config, modules, exceptions, protocols) do
+  defp generate_readme(output, module_nodes, config, modules, exceptions, protocols, has_logo) do
     readme_path = Path.expand(config.readme)
-    write_readme(output, File.read(readme_path), module_nodes, config, modules, exceptions, protocols)
+    write_readme(output, File.read(readme_path), module_nodes, config, modules, exceptions, protocols, has_logo)
   end
 
-  defp write_readme(output, {:ok, content}, module_nodes, config, modules, exceptions, protocols) do
+  defp process_logo_metadata(config) do
+    buffer_length = 16
+    logo_path = Path.expand(config.logo)
+    content = File.open!(logo_path, [:read], fn(file) ->
+                IO.binread(file, buffer_length)
+              end)
+
+    output = "#{config.output}/assets"
+    File.mkdir_p! output
+
+    case logo_format(content) do
+      :png ->
+        File.copy logo_path, "#{output}/logo.png"
+        true
+      :jpg ->
+        File.copy logo_path, "#{output}/logo.jpg"
+        true
+      _ ->
+        raise ArgumentError, message: "Image format not recognized, allowed formats are: JPG, PNG"
+    end
+  end
+
+  defp logo_format(<<0xffd8 :: 16, _rest :: binary>>), do: :jpg
+  defp logo_format(<<137, 80, 78, 71, 13, 10, 26, 10, _rest :: binary>>), do: :png
+  defp logo_format(_), do: :unknown
+
+  defp write_readme(output, {:ok, content}, module_nodes, config, modules, exceptions, protocols, has_logo) do
     content = Autolink.project_doc(content, module_nodes)
-    readme_html = Templates.readme_template(config, modules, exceptions, protocols, content) |> pretty_codeblocks
+    readme_html = Templates.readme_template(config, modules, exceptions, protocols, content, has_logo) |> pretty_codeblocks
     :ok = File.write("#{output}/README.html", readme_html)
     true
   end
 
-  defp write_readme(_, _, _, _, _, _, _) do
+  defp write_readme(_, _, _, _, _, _, _, _) do
     false
   end
 
@@ -139,14 +166,14 @@ defmodule ExDoc.Formatter.HTML do
     Enum.filter nodes, &match?(%ExDoc.ModuleNode{type: x} when x in [:protocol], &1)
   end
 
-  defp generate_list(nodes, all, output, config, has_readme) do
+  defp generate_list(nodes, all, output, config, has_readme, has_logo) do
     nodes
-    |> Enum.map(&Task.async(fn -> generate_module_page(&1, all, output, config, has_readme) end))
+    |> Enum.map(&Task.async(fn -> generate_module_page(&1, all, output, config, has_readme, has_logo) end))
     |> Enum.map(&Task.await/1)
   end
 
-  defp generate_module_page(node, modules, output, config, has_readme) do
-    content = Templates.module_page(node, config, modules, has_readme)
+  defp generate_module_page(node, modules, output, config, has_readme, has_logo) do
+    content = Templates.module_page(node, config, modules, has_readme, has_logo)
     File.write("#{output}/#{node.id}.html", content)
   end
 
